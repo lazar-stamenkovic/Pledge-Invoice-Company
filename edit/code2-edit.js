@@ -273,5 +273,5 @@ exports.main = async (event, callback) => {
     get_ns_cust_id_req.write(JSON.stringify({properties: {netsuite_internal_id: ns_lineitem_id }}));
     get_ns_cust_id_req.end();
   })
-  callback({ outputFields: { ns_lineitem_id } });
+  callback({ outputFields: { ns_lineitem_id, hubspot_lineitem_id:  lineItemId} });
 }
