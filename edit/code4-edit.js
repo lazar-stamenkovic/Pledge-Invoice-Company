@@ -57,6 +57,17 @@ exports.main = async (event, callback) => {
   const accessToken = process.env.accessToken;
   const ns_lineitem_id = event.inputFields['ns_lineitem_id'];
   const hubspot_lineitem_id = event.inputFields['hubspot_lineitem_id'];
+
+  if (!ns_lineitem_id) {
+    callback({
+      outputFields: {
+        invoice_successfully_created: 'no',
+        notification: 'Invoice creation has been failed'
+      }
+    });
+    return;
+  }
+
   const url = `https://4147491-sb1.suitetalk.api.netsuite.com/services/rest/record/v1/invoice/${ns_lineitem_id}`;
   const AuthorizationHeader = ns_auth('GET', url);
   const ns_invoice_options = {
@@ -83,9 +94,6 @@ exports.main = async (event, callback) => {
         }
       });
     });
-
-    console.log('1111', tran_id)
-
     let get_ns_cust_id = {
       "method": "PATCH",
       "hostname": "api.hubapi.com",
@@ -112,13 +120,12 @@ exports.main = async (event, callback) => {
       });
       get_ns_cust_id_req.write(JSON.stringify({properties: {
         netsuite_invoice_id: tran_id,
-        invoice_number:tran_id
+        invoice_number:tran_id,
+        invoice_successfully_created: 'yes'
       }}));
       get_ns_cust_id_req.end();
     });
-    console.log('22222', res)
-
-    callback({ outputFields: { notification: 'Invoice number has been added', invoice_successfully_created: 'yes'}});
+    callback({ outputFields: { notification: 'Invoice has been created', invoice_successfully_created: 'yes'}});
   } catch (e) {
     throw e
   }
