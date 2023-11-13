@@ -65,7 +65,6 @@ exports.main = async (event, callback) => {
         notification: 'Invoice creation has been failed'
       }
     });
-    return;
   }
 
   const url = `https://4147491-sb1.suitetalk.api.netsuite.com/services/rest/record/v1/invoice/${ns_lineitem_id}`;
@@ -127,6 +126,7 @@ exports.main = async (event, callback) => {
     });
     callback({ outputFields: { notification: 'Invoice has been created', invoice_successfully_created: 'yes'}});
   } catch (e) {
-    throw e
+    console.error(e);
+    throw e;
   }
 }
