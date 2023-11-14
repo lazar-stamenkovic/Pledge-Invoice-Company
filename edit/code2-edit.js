@@ -104,7 +104,7 @@ exports.main = async (event, callback) => {
 
   /* Foreign custom code Variable */
   const nsId = event.inputFields['ns_id'];
-  const line_items_string = event.inputFields['line_items'];
+  const li_ids_string = event.inputFields['line_items'];
   const owner_full_name = event.inputFields['owner_full_name'];
   const hubspot_internal_id = dealId;
   const department = event.inputFields['department'];
@@ -118,160 +118,141 @@ exports.main = async (event, callback) => {
   const billing_state = event.inputFields['billing_state'];
   const billing_zip = event.inputFields['billing_zip'];
 
-  const line_items = JSON.parse(line_items_string)
-  if (!line_items || !line_items.length) {
-    throw Error('no line items')
-  }
-  const lineItemId = line_items[0].id
-
-/***** END ******** Variables ***************/
-
-
-  /******************************/
-  /****** Get Line Item Detail ******/
-  /******************************/
-
-  const line_item = await new Promise((resolve, reject) => {
-    let p = 'properties';
-    let query = `${p}=name&${p}=price&${p}=status&${p}=class&${p}=netsuite_item_internal_id&${p}=netsuite_invoice_id&${p}=department&${p}=netsuite_internal_id&${p}=invoice_number&${p}=due_date&${p}=quantity`;
-
+  try {
+    const li_ids = JSON.parse(li_ids_string)
+    if (!li_ids || !li_ids.length) {
+      throw Error('no line items')
+    }
     var options = {
-      "method": "GET",
+      "method": "POST",
       "hostname": "api.hubapi.com",
       "port": null,
-      "path": `/crm/v3/objects/line_items/${lineItemId}?${query}&archived=false`,
-      "headers": {
-        "accept": "application/json",
-        'Authorization': `Bearer ${accessToken}`
-      }
-    };
-    var req = http.request(options, function (res) {
-      var chunks = [];
-      res.on("data", function (chunk) {
-        chunks.push(chunk);
-      });
-      res.on("end", function () {
-        var body = Buffer.concat(chunks);
-        try {
-          let properties = JSON.parse(body).properties;
-          resolve(properties)
-        } catch(e) {
-          console.error('failed to parse line item data')
-          reject(e)
-        }
-      });
-    });
-    req.end();
-  });
-
-  /******************************/
-  /****** Create Netsuit Invoice ******/
-  /******************************/
-  const BaseURL = 'https://4147491-sb1.suitetalk.api.netsuite.com/services/rest/record/v1/invoice';
-  const AuthorizationHeader = ns_auth('POST', BaseURL);
-
-  let li_id = line_item.hs_object_id;
-  let li_qty = parseFloat(line_item.quantity);
-  let li_name = line_item.name;
-  let li_amount = parseFloat(line_item.price);
-  let li_netsuite_item_internal_id = line_item.netsuite_item_internal_id;
-  let li_netsuite_internal_id = line_item.netsuite_internal_id;
-  let li_netsuite_invoice_id = line_item.netsuite_invoice_id;
-  let li_invoice_number = line_item.invoice_number;
-  let li_class = line_item.class;
-  let li_department = line_item.department;
-  let li_status = line_item.status;
-  let li_due_date = line_item.due_date;
-  let totalPrice = 0;
-  totalPrice = calculateTotalPrice(line_item.price, line_item.quantity);
-
-  let netSuiteDepartmentId = mapDepartment(li_department);
-  let netSuiteClassId = mapClass(li_class);
-
-  //
-
-  const options = {
-    method: 'POST',
-    url: BaseURL,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': AuthorizationHeader
-    },
-    data: JSON.stringify({
-      "class": {
-        "id": netSuiteClassId
-      },
-      "department": {
-        "id": netSuiteDepartmentId
-      },
-      "custbodyem_billto_address1_hubspot": billing_street_address_1,
-      "custbodyem_billto_city_hubspot": billing_city,
-      "custbodyem_billto_state_hubspot": billing_state,
-      "custbodyem_billto_zip_hubspot": billing_zip,
-      "custbodyem_deal_transaction_id": dealId,
-      "custbodyem_item_transaction_id": li_id,
-      "custbodyem_salesrep_hubspot": owner_full_name,
-      "dueDate": li_due_date,
-      "entity": {
-        "id": nsId
-      },
-      "status": {
-        "id": "Paid In Full",
-        "refName": "Paid In Full"
-      },
-      "subsidiary": {
-        "id": "1",
-        "refName": "Parent Company"
-      },
-      "tranId": li_invoice_number,
-      "item": {
-        "items": [
-          {
-            "amount": li_amount * li_qty,
-            "item": {
-              "id":li_netsuite_item_internal_id
-            },
-            "quantity": li_qty
-          }
-        ]
-      },
-    })
-  };
-  const ns_lineitem_id = await axios(options).then(response => {
-      const ns_lineItemId = extractNSrecordId(response.headers.location);
-      if (!ns_lineItemId) {
-        console.error("Failed to extract customer ID from the provided URL.");
-        throw Error('Failed to extract customer ID from the provided URL.')
-      }
-      return  ns_lineItemId
-    })
-
-  const res = await new Promise((resolve) => {
-    let get_ns_cust_id = {
-      "method": "PATCH",
-      "hostname": "api.hubapi.com",
-      "port": null,
-      "path": `/crm/v3/objects/line_items/${li_id}`,
+      "path": "/crm/v3/objects/line_items/batch/read?archived=false",
       "headers": {
         "accept": "application/json",
         "content-type": "application/json",
         "authorization": `Bearer ${accessToken}`
       }
     };
-    let get_ns_cust_id_req = http.request(get_ns_cust_id, function (get_ns_cust_id_res) {
-      var get_ns_cust_id_chunks = [];
-
-      get_ns_cust_id_res.on("data", function (chunk) {
-        get_ns_cust_id_chunks.push(chunk);
-      });
-
-      get_ns_cust_id_res.on("end", function () {
-        var get_ns_cust_id_body = Buffer.concat(get_ns_cust_id_chunks);
-        resolve(get_ns_cust_id_body.toString())
-      });
+   	const line_items_detail = await new Promise((resolve, reject) => {
+      var req = http.request(options, function (res) {
+          var chunks = [];
+          res.on("data", function (chunk) {
+            chunks.push(chunk);
+          });
+          res.on("end", function () {
+            var body = Buffer.concat(chunks);
+            console.log(body.toString());
+            try {
+              const parsedData = JSON.parse(body.toString());
+              if (!parsedData) {
+                reject(`failed to get line item batch: ${body.toString()}`);
+              }
+              resolve(parsedData.results)
+            } catch(e) {
+              console.error(e);
+              reject(e);
+            }
+          });
+        });
+      req.write(JSON.stringify({
+        propertiesWithHistory: ['test'],
+        inputs: li_ids,
+        properties: ['name', 'quantity', 'price', 'status', 'class', 'department', 'netsuite_invoice_id', 'netsuite_internal_id', 'due_date', 'invoice_number', 'netsuite_item_internal_id']
+      }));
+      req.end();
     });
-    get_ns_cust_id_req.write(JSON.stringify({properties: {netsuite_internal_id: ns_lineitem_id }}));
-    get_ns_cust_id_req.end();
-  })
-  callback({ outputFields: { ns_lineitem_id, hubspot_lineitem_id:  lineItemId} });
+    if (!line_items_detail || !line_items_detail.length) {
+      throw Error("failed to get line item detail")
+    }
+    const results = []
+    for (line_item of line_items_detail) {
+      const properties = line_item.properties
+      let li_id = properties.hs_object_id;
+      let li_qty = parseFloat(properties.quantity) || 0;
+      let li_name = properties.name || '';
+      let li_amount = parseFloat(properties.price) || 0;
+      let li_netsuite_item_internal_id = properties.netsuite_item_internal_id || '';
+      let li_netsuite_internal_id = properties.netsuite_internal_id || '';
+      let li_netsuite_invoice_id = properties.netsuite_invoice_id || '';
+      let li_invoice_number = properties.invoice_number || '';
+      let li_class = properties.class;
+      let li_department = properties.department;
+      let li_status = properties.status;
+      let li_due_date = properties.due_date;
+      let totalPrice = 0;
+      totalPrice = calculateTotalPrice(properties.price, properties.quantity);
+
+      let netSuiteDepartmentId = mapDepartment(li_department) || '';
+      let netSuiteClassId = mapClass(li_class) || '';
+
+      const BaseURL = 'https://4147491-sb1.suitetalk.api.netsuite.com/services/rest/record/v1/invoice';
+  	  const AuthorizationHeader = ns_auth('POST', BaseURL);
+	  const options = {
+        method: 'POST',
+        url: BaseURL,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': AuthorizationHeader
+        },
+        data: JSON.stringify({
+          "class": {
+            "id": netSuiteClassId
+          },
+          "department": {
+            "id": netSuiteDepartmentId
+          },
+          "custbodyem_billto_address1_hubspot": billing_street_address_1,
+          "custbodyem_billto_city_hubspot": billing_city,
+          "custbodyem_billto_state_hubspot": billing_state,
+          "custbodyem_billto_zip_hubspot": billing_zip,
+          "custbodyem_deal_transaction_id": dealId,
+          "custbodyem_item_transaction_id": li_id,
+          "custbodyem_salesrep_hubspot": owner_full_name,
+          "dueDate": li_due_date,
+          "entity": {
+            "id": nsId
+          },
+          "status": {
+            "id": "Paid In Full",
+            "refName": "Paid In Full"
+          },
+          "subsidiary": {
+            "id": "1",
+            "refName": "Parent Company"
+          },
+          "tranId": li_invoice_number,
+          "item": {
+            "items": [
+              {
+                "amount": li_amount * li_qty,
+                "item": {
+                  "id":li_netsuite_item_internal_id
+                },
+                "quantity": li_qty
+              }
+            ]
+          },
+        })
+      };
+	  const ns_lineitem_id = await axios(options).then(response => {
+        const ns_lineItemId = extractNSrecordId(response.headers.location);
+        if (!ns_lineItemId) {
+          console.error("Failed to extract customer ID from the provided URL.");
+          throw Error('Failed to extract customer ID from the provided URL.')
+        }
+        return  ns_lineItemId
+      })
+	  results.push({
+        line_item_id: li_id,
+        ns_line_item_id: ns_lineitem_id
+      })
+    }
+    const outputFields = {
+      ns_line_item_results: results
+    }
+    callback({ outputFields: outputFields });
+  } catch (e) {
+    throw e
+  }
 }
